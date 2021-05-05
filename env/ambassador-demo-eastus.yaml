@@ -1,0 +1,85 @@
+kind: Cluster
+metadata:
+  name: ambassador-demo-eastus
+  space: default
+spec:
+  kublrAgentTgzUrl: 'https://repo.kublr.com/repository/gobinaries/kublr/1.19.7-29/kublr-1.19.7-29-linux.tar.gz'
+  locations:
+    - name: azure1
+      azure:
+        region: eastus
+        azureApiAccessSecretRef: azure
+  network:
+    apiServerSecurePort: 443
+  master:
+    locations:
+      - azure:
+          instanceType: Standard_A4_v2
+          osDisk:
+            imagePublisher: Canonical
+            imageOffer: UbuntuServer
+            imageVersion: 18.04-LTS
+            type: image
+            diskSizeGb: 40
+          sshKeySecretRef: ssh-pub
+          zones: []
+          pinToZone: default
+        locationRef: azure1
+    minNodes: 1
+    kublrVariant: ubuntu-18-04
+    kublrAgentConfig:
+      kublr:
+        psp:
+          default_clusterrole: 'psp:privileged'
+  nodes:
+    - name: group1
+      locations:
+        - locationRef: azure1
+          azure:
+            instanceType: Standard_A8_v2
+            osDisk:
+              imagePublisher: Canonical
+              imageOffer: UbuntuServer
+              imageVersion: 18.04-LTS
+              type: image
+              diskSizeGb: 40
+            sshKeySecretRef: ssh-pub
+            groupType: VirtualMachineScaleSet
+            zones: []
+            pinToZone: default
+      autoscaling: false
+      minNodes: 1
+      stateful: false
+  features:
+    system:
+      chart:
+        version: 1.20.2-37
+    monitoring:
+      chart:
+        version: 1.20.2-42
+      enabled: true
+      platformClient:
+        enabled: true
+        prometheus:
+          persistent: false
+    ingress:
+      ingressControllers:
+        - nginx:
+            enabled: true
+            acme:
+              enabled: true
+              apiUrl: 'https://acme-v02.api.letsencrypt.org/directory'
+              email: example-email@example.com
+      chart:
+        version: 1.20.2-35
+    kublrOperator:
+      enabled: true
+      chart:
+        version: 1.20.2-40
+  packages:
+    ambassador:
+      chart:
+        url: 'https://getambassador.io/helm/ambassador-6.7.5.tgz'
+      releaseName: ambassador
+      namespace: ambassador
+      helmVersion: 'v3.4.0'

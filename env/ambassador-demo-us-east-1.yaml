@@ -1,0 +1,157 @@
+kind: Cluster
+metadata:
+  name: ambassador-demo-us-east-1
+  space: default
+spec:
+  kublrAgentTgzUrl: 'https://repo.kublr.com/repository/gobinaries/kublr/1.19.7-29/kublr-1.19.7-29-linux.tar.gz'
+  locations:
+    - name: aws1
+      aws:
+        region: us-east-1
+        enableTerminationProtection: false
+        awsApiAccessSecretRef: aws
+        availabilityZones:
+          - us-east-1f
+        resourcesCloudFormationExtras:
+          DevOpsDemoEFS:
+            Type: AWS::EFS::FileSystem
+            Properties: {}
+          DevOpsDemoEFSMT5:
+            Type: AWS::EFS::MountTarget
+            Properties:
+              FileSystemId: { Ref: DevOpsDemoEFS }
+              SecurityGroups: [ { "Fn::GetAtt": [ NewVpc, DefaultSecurityGroup ] } ]
+              SubnetId: { Ref: SubnetNodePublic5 }
+          DevOpsDemoPrivateHostedZone:
+            Type: AWS::Route53::HostedZone
+            Properties:
+              Name: ambassador-demo.kublr.loc
+              VPCs: 
+                - VPCId: { Ref: NewVpc }
+                  VPCRegion: { Ref: 'AWS::Region' }
+          DevOpsDemoPrivateHostedZoneRecordSetEFS:
+            Type: AWS::Route53::RecordSet
+            Properties:
+              HostedZoneId: { Ref: DevOpsDemoPrivateHostedZone }
+              Name: efs.ambassador-demo.kublr.loc
+              ResourceRecords:
+                - { "Fn::Sub": [ '${EFS}.efs.${AWS::Region}.amazonaws.com', { EFS: { Ref: DevOpsDemoEFS } } ] }
+              TTL: "300"
+              Type: CNAME
+  network:
+    apiServerSecurePort: 443
+  master:
+    locations:
+      - aws:
+          instanceType: t3.medium
+          availabilityZones:
+            - us-east-1f
+          overrideImageId: ami-02354e95b39ca8dec
+          imageRootDeviceName: /dev/xvda
+          groupType: asg-mip
+          mixedInstancesPolicyCloudFormationExtras:
+            InstancesDistribution:
+              OnDemandPercentageAboveBaseCapacity: 0
+            LaunchTemplate:
+              Overrides:
+                - InstanceType: t3.medium
+                - InstanceType: t2.medium
+          instanceMonitoring: false
+          rootVolume:
+            size: 40
+        locationRef: aws1
+    minNodes: 1
+    kublrVariant: aws-amazon-linux-2
+    kublrAgentConfig:
+      kublr:
+        psp:
+          default_clusterrole: 'psp:privileged'
+  nodes:
+    - name: group1
+      locations:
+        - locationRef: aws1
+          aws:
+            instanceType: m5a.large
+            availabilityZones:
+              - us-east-1f
+            overrideImageId: ami-02354e95b39ca8dec
+            imageRootDeviceName: /dev/xvda
+            groupType: asg-mip
+            mixedInstancesPolicyCloudFormationExtras:
+              InstancesDistribution:
+                OnDemandPercentageAboveBaseCapacity: 0
+              LaunchTemplate:
+                Overrides:
+                  - InstanceType: m5a.large
+                  - InstanceType: m5.large
+                  - InstanceType: m5ad.large
+                  - InstanceType: m5d.large
+                  - InstanceType: m5n.large
+                  - InstanceType: m5dn.large
+                  - InstanceType: t3.large
+            instanceMonitoring: false
+            rootVolume:
+              size: 40
+      kublrVariant: aws-amazon-linux-2
+      autoscaling: false
+      minNodes: 1
+      stateful: false
+  features:
+    system:
+      chart:
+        version: 1.20.2-37
+      values:
+        storageClass:
+          defaultClass: false
+    monitoring:
+      chart:
+        version: 1.20.2-42
+      enabled: true
+      platformClient:
+        enabled: true
+        prometheus:
+          persistent: false
+      values:
+        prometheus:
+          persistence:
+            storageClass: nfs-client
+        grafana:
+          persistence:
+            storageClass: nfs-client
+        alertmanager:
+          persistence:
+            storageClass: nfs-client
+    ingress:
+      ingressControllers:
+        - nginx:
+            enabled: true
+            acme:
+              enabled: true
+              apiUrl: 'https://acme-v02.api.letsencrypt.org/directory'
+              email: example-email@example.com
+      chart:
+        version: 1.20.2-35
+    kublrOperator:
+      enabled: true
+      chart:
+        version: 1.20.2-40
+  packages:
+    nfs-subdir-external-provisioner:
+      helmVersion: '3.4.0'
+      namespace: kube-system
+      releaseName: nfs-subdir-external-provisioner
+      chart:
+        name: nfs-subdir-external-provisioner
+        url: https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner/releases/download/nfs-subdir-external-provisioner-4.0.10/nfs-subdir-external-provisioner-4.0.10.tgz
+      values:
+        nfs:
+          server: efs.ambassador-demo.kublr.loc
+          path: /
+        storageClass:
+          defaultClass: true
+    ambassador:
+      chart:
+        url: 'https://getambassador.io/helm/ambassador-6.7.5.tgz'
+      releaseName: ambassador
+      namespace: ambassador
+      helmVersion: 'v3.4.0'
